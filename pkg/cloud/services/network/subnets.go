@@ -519,9 +519,11 @@ func (s *Service) getSubnetTagParams(unmanagedVPC bool, id string, public bool, 
 			additionalTags[internalLoadBalancerTag] = "1"
 		}
 
-		// Add tag needed for Service type=LoadBalancer
-		additionalTags[infrav1.ClusterAWSCloudProviderTagKey(s.scope.KubernetesClusterName())] = string(infrav1.ResourceLifecycleShared)
 	}
+	// Add tag needed for Service type=LoadBalancer
+	// Fixme: ALB needs to use this tag to create lbsvc, so the tag must be set to subnet.
+	//        This is a compromise solution and may be changed in the future
+	additionalTags[infrav1.ClusterAWSCloudProviderTagKey(s.scope.KubernetesClusterName())] = string(infrav1.ResourceLifecycleShared)
 
 	if !unmanagedVPC {
 		for k, v := range manualTags {
