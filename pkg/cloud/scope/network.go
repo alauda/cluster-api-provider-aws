@@ -45,4 +45,7 @@ type NetworkScope interface {
 
 	// TagUnmanagedNetworkResources returns is tagging unmanaged network resources is set.
 	TagUnmanagedNetworkResources() bool
+
+	// IsResourceReservedOnDeleteCluster returns true if resource is need to be reserved when deleting cluster
+	IsResourceReservedOnDeleteCluster(resource string) bool
 }

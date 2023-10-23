@@ -19,6 +19,7 @@ package scope
 import (
 	"context"
 	"fmt"
+	"strings"
 	"time"
 
 	amazoncni "github.com/aws/amazon-vpc-cni-k8s/pkg/apis/crd/v1alpha1"
@@ -29,6 +30,9 @@ import (
 	rbacv1 "k8s.io/api/rbac/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/klog/v2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/controllers/remote"
+	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -37,13 +41,14 @@ import (
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/throttle"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/logger"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/util/system"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/controllers/remote"
-	"sigs.k8s.io/cluster-api/util/patch"
 )
 
 var (
 	scheme = runtime.NewScheme()
+)
+
+const (
+	annotationReservedResourcesKey = "cpaas.io/reserved-resources-on-delete-cluster"
 )
 
 func init() {
@@ -417,4 +422,18 @@ func (s *ManagedControlPlaneScope) Partition() string {
 		s.ControlPlane.Spec.Partition = system.GetPartitionFromRegion(s.Region())
 	}
 	return s.ControlPlane.Spec.Partition
+}
+
+// IsResourceReservedOnDeleteCluster returns true if resource is need to be reserved when deleting cluster
+func (s *ManagedControlPlaneScope) IsResourceReservedOnDeleteCluster(resource string) bool {
+	var resources []string
+	if value, ok := s.ControlPlane.Annotations[annotationReservedResourcesKey]; ok {
+		resources = strings.Split(value, ",")
+	}
+	for _, r := range resources {
+		if r == resource {
+			return true
+		}
+	}
+	return false
 }
