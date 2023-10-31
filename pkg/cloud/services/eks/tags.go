@@ -21,6 +21,8 @@ import (
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
+	"github.com/aws/aws-sdk-go/service/ec2"
+	"github.com/aws/aws-sdk-go/service/ec2/ec2iface"
 	"github.com/aws/aws-sdk-go/service/eks"
 	"github.com/aws/aws-sdk-go/service/eks/eksiface"
 	"github.com/pkg/errors"
@@ -111,7 +113,100 @@ func getASGTagUpdates(clusterName string, currentTags map[string]string, tags ma
 
 func (s *NodegroupService) reconcileTags(ng *eks.Nodegroup) error {
 	tags := ngTags(s.scope.ClusterName(), s.scope.AdditionalTags())
-	return updateTags(s.EKSClient, ng.NodegroupArn, aws.StringValueMap(ng.Tags), tags)
+	if err := updateTags(s.EKSClient, ng.NodegroupArn, aws.StringValueMap(ng.Tags), tags); err != nil {
+		return err
+	}
+	return s.reconcileInstanceTags(ng)
+}
+
+func (s *NodegroupService) reconcileInstanceTags(ng *eks.Nodegroup) error {
+	ngtags := ngTags(s.scope.ClusterName(), s.scope.AdditionalTags())
+	groupReq := autoscaling.DescribeAutoScalingGroupsInput{}
+	for _, asg := range ng.Resources.AutoScalingGroups {
+		groupReq.AutoScalingGroupNames = append(groupReq.AutoScalingGroupNames, asg.Name)
+	}
+	groups, err := s.AutoscalingClient.DescribeAutoScalingGroups(&groupReq)
+	if err != nil {
+		return errors.Wrap(err, "failed to describe AutoScalingGroup for nodegroup")
+	}
+	ids := make([]*string, 0)
+	for _, group := range groups.AutoScalingGroups {
+		for _, instance := range group.Instances {
+			ids = append(ids, instance.InstanceId)
+		}
+	}
+	s.scope.Info("instances of autoscaling groups", "count", len(ids), "service", "tags:NodegroupService")
+	ec2Req := ec2.DescribeInstancesInput{InstanceIds: ids}
+	output, err := s.EC2Client.DescribeInstances(&ec2Req)
+	if err != nil {
+		return errors.Wrap(err, "failed to describe Instances")
+	}
+
+	for {
+		for _, reservation := range output.Reservations {
+			for _, instance := range reservation.Instances {
+				tags, desired := make(map[string]string), make(map[string]string)
+				for _, tag := range instance.Tags {
+					if tag != nil && tag.Key != nil && tag.Value != nil {
+						tags[*tag.Key] = *tag.Value
+						desired[*tag.Key] = *tag.Value
+					}
+				}
+				for k, v := range ngtags {
+					desired[k] = v
+				}
+				s.scope.Info("updating instance tag", "instance", instance.InstanceId)
+				if err = updateECSTags(s.EC2Client, []*string{instance.InstanceId}, tags, desired); err != nil {
+					return err
+				}
+				volumeIds := make([]*string, 0)
+				for _, b := range instance.BlockDeviceMappings {
+					if b != nil && b.Ebs != nil && b.Ebs.VolumeId != nil {
+						volumeIds = append(volumeIds, b.Ebs.VolumeId)
+					}
+				}
+				if err = s.reconcileEBSVolumeTags(volumeIds, ng); err != nil {
+					return err
+				}
+			}
+		}
+		if output.NextToken == nil {
+			break
+		}
+	}
+	return nil
+}
+
+func (s *NodegroupService) reconcileEBSVolumeTags(volumeIds []*string, ng *eks.Nodegroup) error {
+	ngtags := ngTags(s.scope.ClusterName(), s.scope.AdditionalTags())
+	req := ec2.DescribeVolumesInput{VolumeIds: volumeIds}
+	output, err := s.EC2Client.DescribeVolumes(&req)
+	if err != nil {
+		return errors.Wrap(err, "failed to describe Volumes")
+	}
+	for {
+		for _, volume := range output.Volumes {
+			tags, desired := make(map[string]string), make(map[string]string)
+			desired[eksClusterNameTag] = s.scope.ClusterName()
+			desired[eksNodeGroupNameTag] = *ng.NodegroupName
+			for _, tag := range volume.Tags {
+				if tag != nil && tag.Key != nil && tag.Value != nil {
+					tags[*tag.Key] = *tag.Value
+					desired[*tag.Key] = *tag.Value
+				}
+			}
+			for k, v := range ngtags {
+				desired[k] = v
+			}
+			if err = updateECSTags(s.EC2Client, []*string{volume.VolumeId}, tags, desired); err != nil {
+				return err
+			}
+		}
+		if output.NextToken == nil {
+			break
+		}
+	}
+	return nil
 }
 
 func tagDescriptionsToMap(input []*autoscaling.TagDescription) map[string]string {
@@ -199,6 +294,44 @@ func updateTags(client eksiface.EKSAPI, arn *string, existingTags, desiredTags m
 			TagKeys:     aws.StringSlice(untagKeys),
 		}
 		_, err := client.UntagResource(untagInput)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func updateECSTags(client ec2iface.EC2API, resources []*string, existingTags, desiredTags map[string]string) error {
+	untagKeys, newTags := getTagUpdates(existingTags, desiredTags)
+	if len(newTags) > 0 {
+		tags := make([]*ec2.Tag, 0)
+		for k, v := range newTags {
+			tags = append(tags, &ec2.Tag{
+				Key:   &k,
+				Value: &v,
+			})
+		}
+		tagInput := &ec2.CreateTagsInput{
+			Tags:      tags,
+			Resources: resources,
+		}
+		_, err := client.CreateTags(tagInput)
+		if err != nil {
+			return err
+		}
+	}
+
+	if len(untagKeys) > 0 {
+		tags := make([]*ec2.Tag, len(untagKeys))
+		for i, k := range untagKeys {
+			tags[i] = &ec2.Tag{Key: &k}
+		}
+		untagInput := &ec2.DeleteTagsInput{
+			Resources: resources,
+			Tags:      tags,
+		}
+		_, err := client.DeleteTags(untagInput)
 		if err != nil {
 			return err
 		}
