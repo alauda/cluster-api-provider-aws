@@ -91,6 +91,7 @@ type NodegroupService struct {
 	scope             *scope.ManagedMachinePoolScope
 	AutoscalingClient autoscalingiface.AutoScalingAPI
 	EKSClient         eksiface.EKSAPI
+	EC2Client         ec2iface.EC2API
 	iam.IAMService
 	STSClient stsiface.STSAPI
 }
@@ -101,6 +102,7 @@ func NewNodegroupService(machinePoolScope *scope.ManagedMachinePoolScope) *Nodeg
 		scope:             machinePoolScope,
 		AutoscalingClient: scope.NewASGClient(machinePoolScope, machinePoolScope, machinePoolScope, machinePoolScope.ManagedMachinePool),
 		EKSClient:         scope.NewEKSClient(machinePoolScope, machinePoolScope, machinePoolScope, machinePoolScope.ManagedMachinePool),
+		EC2Client:         scope.NewEC2Client(machinePoolScope, machinePoolScope, machinePoolScope, machinePoolScope.ManagedMachinePool),
 		IAMService: iam.IAMService{
 			Wrapper:   &machinePoolScope.Logger,
 			IAMClient: scope.NewIAMClient(machinePoolScope, machinePoolScope, machinePoolScope, machinePoolScope.ManagedMachinePool),
