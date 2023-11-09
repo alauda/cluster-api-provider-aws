@@ -20,6 +20,8 @@ import (
 	"context"
 	"fmt"
 
+	"sigs.k8s.io/controller-runtime/pkg/client"
+
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/aws/awserr"
 	"github.com/aws/aws-sdk-go/service/autoscaling"
@@ -640,4 +642,48 @@ func (s *NodegroupService) waitForNodegroupActive() (*eks.Nodegroup, error) {
 	}
 
 	return ng, nil
+}
+
+func (s *Service) deleteUnmanagedNodeGroups(ctx context.Context) error {
+	s.scope.Debug("Delete EKS unmanaged node groups")
+	clusterName, namespace := s.scope.Name(), s.scope.Namespace()
+	listOptions := []client.ListOption{
+		client.InNamespace(namespace),
+		client.MatchingLabels(map[string]string{clusterv1.ClusterNameLabel: clusterName}),
+	}
+	managedMachinePools := &expinfrav1.AWSManagedMachinePoolList{}
+	if err := s.scope.Client.List(ctx, managedMachinePools, listOptions...); err != nil {
+		return fmt.Errorf("failed to list managed machine pools for cluster %s/%s: %w", namespace, clusterName, err)
+	}
+	poolMap := make(map[string]struct{})
+	for _, pool := range managedMachinePools.Items {
+		poolMap[pool.Spec.EKSNodegroupName] = struct{}{}
+	}
+
+	output, err := s.EKSClient.ListNodegroupsWithContext(ctx, &eks.ListNodegroupsInput{ClusterName: &clusterName})
+	if err != nil {
+		return errors.Wrapf(err, "failed to list node groups of cluster %s/%s", namespace, clusterName)
+	}
+
+	for {
+		for _, pool := range output.Nodegroups {
+			if pool == nil {
+				continue
+			}
+			if _, ok := poolMap[*pool]; ok {
+				continue
+			}
+			s.scope.Debug("start delete node group", "nodeGroupName", pool, "clusterName", clusterName)
+			if _, err = s.EKSClient.DeleteNodegroupWithContext(ctx, &eks.DeleteNodegroupInput{
+				ClusterName:   &clusterName,
+				NodegroupName: pool,
+			}); err != nil {
+				return errors.Wrapf(err, "failed to delete nodegroup %s of cluster %s/%s", *pool, namespace, clusterName)
+			}
+		}
+		if output.NextToken == nil {
+			break
+		}
+	}
+	return nil
 }
