@@ -63,6 +63,9 @@ const (
 	deleteRequeueAfter = 20 * time.Second
 
 	awsManagedControlPlaneKind = "AWSManagedControlPlane"
+
+	ReconcileAfterDurationForHeath = time.Second * 60
+	ReconcileAfterDurationForError = time.Second * 10
 )
 
 var defaultEKSSecurityGroupRoles = []infrav1.SecurityGroupRole{
@@ -147,6 +150,14 @@ func (r *AWSManagedControlPlaneReconciler) SetupWithManager(ctx context.Context,
 // Reconcile will reconcile AWSManagedControlPlane Resources.
 func (r *AWSManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := logger.FromContext(ctx)
+	defer func() {
+		if reterr != nil {
+			log.Error(reterr, "reconcile control plane failed")
+			res.RequeueAfter = ReconcileAfterDurationForError
+		} else {
+			res.RequeueAfter = ReconcileAfterDurationForHeath
+		}
+	}()
 
 	// Get the control plane instance
 	awsControlPlane := &ekscontrolplanev1.AWSManagedControlPlane{}

@@ -21,13 +21,14 @@ import (
 
 	"github.com/pkg/errors"
 	"k8s.io/klog/v2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util/conditions"
 
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	expinfrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/exp/api/v1beta2"
+	"sigs.k8s.io/cluster-api-provider-aws/v2/feature"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/awserrors"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/record"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/util/conditions"
 )
 
 // ReconcileControlPlane reconciles a EKS control plane.
@@ -62,6 +63,13 @@ func (s *Service) ReconcileControlPlane(ctx context.Context) error {
 	}
 	conditions.MarkTrue(s.scope.ControlPlane, ekscontrolplanev1.EKSIdentityProviderConfiguredCondition)
 
+	if feature.Gates.Enabled(feature.MachinePool) {
+		if err := s.deleteUnmanagedNodeGroups(ctx); err != nil {
+			conditions.MarkFalse(s.scope.ControlPlane, ekscontrolplanev1.EKSDeleteUnmanagedNodePoolsCondition, ekscontrolplanev1.EKSDeleteUnmanagedNodePoolsFailedReason, clusterv1.ConditionSeverityWarning, err.Error())
+			return errors.Wrap(err, "failed deleting eks unmanaged node pools")
+		}
+	}
+	conditions.MarkTrue(s.scope.ControlPlane, ekscontrolplanev1.EKSDeleteUnmanagedNodePoolsCondition)
 	s.scope.Debug("Reconcile EKS control plane completed successfully")
 	return nil
 }
