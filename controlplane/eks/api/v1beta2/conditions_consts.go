@@ -58,3 +58,10 @@ const (
 	// EKSIdentityProviderConfiguredFailedReason used to report failures while reconciling the identity provider config association.
 	EKSIdentityProviderConfiguredFailedReason = "EKSIdentityProviderConfiguredFailed"
 )
+
+const (
+	// EKSDeleteUnmanagedNodePoolsCondition condition reports on the successful deletion of unmanaged node pools.
+	EKSDeleteUnmanagedNodePoolsCondition clusterv1.ConditionType = "EKSDeleteUnmanagedNodePools"
+	// EKSDeleteUnmanagedNodePoolsFailedReason used to report failures while deleting unmanaged node pools.
+	EKSDeleteUnmanagedNodePoolsFailedReason = "EKSDeleteUnmanagedNodePoolsFailed"
+)

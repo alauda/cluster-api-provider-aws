@@ -135,14 +135,14 @@ func (s *NodegroupService) reconcileInstanceTags(ng *eks.Nodegroup) error {
 			ids = append(ids, instance.InstanceId)
 		}
 	}
-	s.scope.Info("instances of autoscaling groups", "count", len(ids), "service", "tags:NodegroupService")
-	ec2Req := ec2.DescribeInstancesInput{InstanceIds: ids}
-	output, err := s.EC2Client.DescribeInstances(&ec2Req)
-	if err != nil {
-		return errors.Wrap(err, "failed to describe Instances")
-	}
 
+	var nextToken *string
 	for {
+		ec2Req := ec2.DescribeInstancesInput{InstanceIds: ids, NextToken: nextToken}
+		output, err := s.EC2Client.DescribeInstances(&ec2Req)
+		if err != nil {
+			return errors.Wrap(err, "failed to describe Instances")
+		}
 		for _, reservation := range output.Reservations {
 			for _, instance := range reservation.Instances {
 				tags, desired := make(map[string]string), make(map[string]string)
@@ -170,7 +170,9 @@ func (s *NodegroupService) reconcileInstanceTags(ng *eks.Nodegroup) error {
 				}
 			}
 		}
-		if output.NextToken == nil {
+		if output.NextToken != nil {
+			nextToken = output.NextToken
+		} else {
 			break
 		}
 	}
@@ -179,12 +181,13 @@ func (s *NodegroupService) reconcileInstanceTags(ng *eks.Nodegroup) error {
 
 func (s *NodegroupService) reconcileEBSVolumeTags(volumeIds []*string, ng *eks.Nodegroup) error {
 	ngtags := ngTags(s.scope.ClusterName(), s.scope.AdditionalTags())
-	req := ec2.DescribeVolumesInput{VolumeIds: volumeIds}
-	output, err := s.EC2Client.DescribeVolumes(&req)
-	if err != nil {
-		return errors.Wrap(err, "failed to describe Volumes")
-	}
+	var nextToken *string
 	for {
+		req := ec2.DescribeVolumesInput{VolumeIds: volumeIds, NextToken: nextToken}
+		output, err := s.EC2Client.DescribeVolumes(&req)
+		if err != nil {
+			return errors.Wrap(err, "failed to describe Volumes")
+		}
 		for _, volume := range output.Volumes {
 			tags, desired := make(map[string]string), make(map[string]string)
 			desired[eksClusterNameTag] = s.scope.ClusterName()
@@ -202,7 +205,9 @@ func (s *NodegroupService) reconcileEBSVolumeTags(volumeIds []*string, ng *eks.N
 				return err
 			}
 		}
-		if output.NextToken == nil {
+		if output.NextToken != nil {
+			nextToken = output.NextToken
+		} else {
 			break
 		}
 	}
