@@ -370,3 +370,8 @@ func (s *ClusterScope) Partition() string {
 	}
 	return s.AWSCluster.Spec.Partition
 }
+
+// IsResourceReservedOnDeleteCluster returns true if resource is need to be reserved when deleting cluster
+func (s *ClusterScope) IsResourceReservedOnDeleteCluster(resource string) bool {
+	return false
+}

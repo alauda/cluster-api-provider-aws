@@ -17,13 +17,14 @@ limitations under the License.
 package network
 
 import (
+	"github.com/aws/aws-sdk-go/service/ec2"
 	"k8s.io/klog/v2"
+	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
+	"sigs.k8s.io/cluster-api/util/conditions"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/awserrors"
 	infrautilconditions "sigs.k8s.io/cluster-api-provider-aws/v2/util/conditions"
-	clusterv1 "sigs.k8s.io/cluster-api/api/v1beta1"
-	"sigs.k8s.io/cluster-api/util/conditions"
 )
 
 // ReconcileNetwork reconciles the network of the given cluster.
@@ -95,6 +96,11 @@ func (s *Service) DeleteNetwork() (err error) {
 		}
 	} else {
 		s.scope.Error(err, "non-fatal: VPC ID is missing, ")
+	}
+
+	if s.scope.IsResourceReservedOnDeleteCluster(ec2.ResourceTypeVpc) {
+		s.scope.Trace("Skipping Nat gateways cause VPC is need to be reserved")
+		return nil
 	}
 
 	vpc.DeepCopyInto(s.scope.VPC())
