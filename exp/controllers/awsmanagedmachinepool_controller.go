@@ -18,6 +18,7 @@ package controllers
 
 import (
 	"context"
+	"time"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -48,6 +49,11 @@ import (
 	"sigs.k8s.io/cluster-api/util/annotations"
 	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/cluster-api/util/predicates"
+)
+
+const (
+	ReconcileAfterDurationForHeath = time.Second * 60
+	ReconcileAfterDurationForError = time.Second * 10
 )
 
 // AWSManagedMachinePoolReconciler reconciles a AWSManagedMachinePool object.
@@ -92,8 +98,18 @@ func (r *AWSManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=awsmanagedmachinepools/status,verbs=get;update;patch
 
 // Reconcile reconciles AWSManagedMachinePools.
-func (r *AWSManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (_ ctrl.Result, reterr error) {
+func (r *AWSManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := logger.FromContext(ctx)
+	defer func() {
+		if reterr != nil {
+			log.Error(reterr, "reconcile managed machine pool failed")
+			res.RequeueAfter = ReconcileAfterDurationForError
+		} else {
+			if res.RequeueAfter == 0 {
+				res.RequeueAfter = ReconcileAfterDurationForHeath
+			}
+		}
+	}()
 
 	awsPool := &expinfrav1.AWSManagedMachinePool{}
 	if err := r.Get(ctx, req.NamespacedName, awsPool); err != nil {

@@ -18,16 +18,17 @@ package eks
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/aws/aws-sdk-go/aws"
 	"github.com/aws/aws-sdk-go/service/eks"
-
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
 	ekscontrolplanev1 "sigs.k8s.io/cluster-api-provider-aws/v2/controlplane/eks/api/v1beta2"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/cloud/converters"
 	eksaddons "sigs.k8s.io/cluster-api-provider-aws/v2/pkg/eks/addons"
 	"sigs.k8s.io/cluster-api-provider-aws/v2/pkg/record"
+	"sigs.k8s.io/cluster-api/util/conditions"
 )
 
 func (s *Service) reconcileAddons(ctx context.Context) error {
@@ -47,6 +48,17 @@ func (s *Service) reconcileAddons(ctx context.Context) error {
 	installed, err := s.getClusterAddonsInstalled(eksClusterName, addonNames)
 	if err != nil {
 		return fmt.Errorf("getting installed eks addons: %w", err)
+	}
+
+	// Sync addons installed from EKS to spec
+	diff, all := s.diffAddons(installed, s.scope.Addons())
+	if diff {
+		s.scope.Info("start update addon upgrading condition")
+		s.scope.ControlPlane.Spec.Addons = &all
+		conditions.MarkTrue(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsUpdatingCondition)
+		if err := s.scope.PatchObject(); err != nil {
+			return fmt.Errorf("failed to update spec addons: %w", err)
+		}
 	}
 
 	// Get the addons from the spec we want for the cluster
@@ -207,6 +219,65 @@ func (s *Service) translateAPIToAddon(addons []ekscontrolplanev1.Addon) []*eksad
 	}
 
 	return converted
+}
+
+// diffAddons filter out addons that installed on EKS but not in spec
+func (s *Service) diffAddons(installedAddons []*eksaddons.EKSAddon, specAddons []ekscontrolplanev1.Addon) (diff bool, all []ekscontrolplanev1.Addon) {
+	m1, m2 := make(map[string]string), make(map[string]string)
+	for _, addon := range specAddons {
+		m1[addon.Name] = addon.Version
+	}
+	addonNames := s.scope.AddonNamesManagedByProvider()
+	m3 := make(map[string]struct{}, len(addonNames))
+	for _, name := range addonNames {
+		m3[name] = struct{}{}
+	}
+	// add addons which installed in cluster and not configured in spec and not managed by provider
+	for _, addon := range installedAddons {
+		if addon == nil || addon.Name == nil || addon.Version == nil {
+			continue
+		}
+		m2[*addon.Name] = *addon.Version
+		version, existInSpec := m1[*addon.Name]
+		_, managedByProvider := m3[*addon.Name]
+		if !existInSpec {
+			diff = true
+			s.scope.Logger.Info("addon diff not exist in spec", "name", *addon.Name, "installedVersion", *addon.Version)
+		}
+		// if addon version is not same with spec, then use the spec version
+		if managedByProvider || (existInSpec && version != *addon.Version) {
+			continue
+		}
+		all = append(all, ekscontrolplanev1.Addon{
+			Name:               *addon.Name,
+			Version:            *addon.Version,
+			ConflictResolution: &ekscontrolplanev1.AddonResolutionOverwrite,
+		})
+	}
+	// add addons which configured in spec only and not installed in cluster and managed by provider
+	for _, addon := range specAddons {
+		version, existInstalled := m2[addon.Name]
+		_, managedByProvider := m3[addon.Name]
+		if !existInstalled || version != addon.Version {
+			s.scope.Logger.Info("addon diff", "name", addon.Name, "specVersion", addon.Version, "installedVersion", version)
+			diff = true
+		}
+		if !existInstalled && !managedByProvider {
+			continue
+		}
+		if addon.ConflictResolution == nil {
+			addon.ConflictResolution = &ekscontrolplanev1.AddonResolutionOverwrite
+		}
+		all = append(all, addon)
+	}
+
+	allNames := make([]string, 0)
+	for _, addon := range all {
+		allNames = append(allNames, addon.Name)
+	}
+	b, _ := json.Marshal(all)
+	s.scope.Logger.Info("all addons:", "diff", diff, "addons", string(b))
+	return
 }
 
 func convertConflictResolution(conflict ekscontrolplanev1.AddonResolution) *string {

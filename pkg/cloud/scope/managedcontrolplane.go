@@ -49,6 +49,7 @@ var (
 
 const (
 	annotationReservedResourcesKey = "cpaas.io/reserved-resources-on-delete-cluster"
+	annotationClusterUpgradeInfo   = "cpaas.io/cluster-upgrade-info"
 )
 
 func init() {
@@ -379,6 +380,10 @@ func (s *ManagedControlPlaneScope) Addons() []ekscontrolplanev1.Addon {
 	return *s.ControlPlane.Spec.Addons
 }
 
+func (s *ManagedControlPlaneScope) AddonNamesManagedByProvider() []string {
+	return []string{"coredns", "vpc-cni", "kube-proxy", "aws-efs-csi-driver", "aws-ebs-csi-driver"}
+}
+
 // DisableKubeProxy returns whether kube-proxy should be disabled.
 func (s *ManagedControlPlaneScope) DisableKubeProxy() bool {
 	return s.ControlPlane.Spec.KubeProxy.Disable
@@ -436,4 +441,9 @@ func (s *ManagedControlPlaneScope) IsResourceReservedOnDeleteCluster(resource st
 		}
 	}
 	return false
+}
+
+func (s *ManagedControlPlaneScope) ClusterUpgrading() bool {
+	_, ok := s.Cluster.Annotations[annotationClusterUpgradeInfo]
+	return ok
 }

@@ -155,7 +155,9 @@ func (r *AWSManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 			log.Error(reterr, "reconcile control plane failed")
 			res.RequeueAfter = ReconcileAfterDurationForError
 		} else {
-			res.RequeueAfter = ReconcileAfterDurationForHeath
+			if res.RequeueAfter == 0 {
+				res.RequeueAfter = ReconcileAfterDurationForHeath
+			}
 		}
 	}()
 

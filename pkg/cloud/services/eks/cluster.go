@@ -605,6 +605,9 @@ func (s *Service) reconcileClusterVersion(cluster *eks.Cluster) error {
 			record.Warnf(s.scope.ControlPlane, "FailedUpdateEKSControlPlane", "failed to update the EKS control plane: %v", err)
 			return errors.Wrapf(err, "failed to update EKS cluster")
 		}
+	} else if specVersion.LessThan(clusterVersion) {
+		newVersion := fmt.Sprintf("%d.%d", clusterVersion.Major(), clusterVersion.Minor())
+		s.scope.ControlPlane.Spec.Version = &newVersion
 	}
 	return nil
 }
