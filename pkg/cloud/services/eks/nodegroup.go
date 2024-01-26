@@ -28,6 +28,7 @@ import (
 	"github.com/google/go-cmp/cmp"
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/version"
+	"sigs.k8s.io/cluster-api/util/conditions"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	infrav1 "sigs.k8s.io/cluster-api-provider-aws/v2/api/v1beta2"
@@ -372,9 +373,12 @@ func (s *NodegroupService) reconcileNodegroupVersion(ng *eks.Nodegroup) error {
 				}
 				return false, err
 			}
+			conditions.MarkTrue(s.scope.ManagedMachinePool, expinfrav1.EKSNodeGroupUpdatingCondition)
 			record.Eventf(s.scope.ManagedMachinePool, "SuccessfulUpdateEKSNodegroup", "Updated EKS nodegroup %s %s", eksClusterName, updateMsg)
 			return true, nil
 		}); err != nil {
+			conditions.Set(s.scope.ManagedMachinePool, conditions.FalseCondition(expinfrav1.EKSNodeGroupUpdatingCondition, expinfrav1.EKSNodeGroupReconciliationFailedReason,
+				clusterv1.ConditionSeverityError, "failed to update the EKS nodegroup %s %s: %v", eksClusterName, updateMsg, err))
 			record.Warnf(s.scope.ManagedMachinePool, "FailedUpdateEKSNodegroup", "failed to update the EKS nodegroup %s %s: %v", eksClusterName, updateMsg, err)
 			return errors.Wrapf(err, "failed to update EKS nodegroup")
 		}
@@ -551,7 +555,13 @@ func (s *NodegroupService) reconcileNodegroup(ctx context.Context) error {
 	if err != nil {
 		return errors.Wrap(err, "failed to wait for nodegroup to be active")
 	}
-
+	if ng.Status != nil && *ng.Status == eks.NodegroupStatusActive {
+		if !s.scope.ClusterUpgrading() {
+			conditions.Delete(s.scope.ManagedMachinePool, expinfrav1.EKSNodeGroupUpdatingCondition)
+		} else if conditions.IsTrue(s.scope.ManagedMachinePool, expinfrav1.EKSNodeGroupUpdatingCondition) {
+			conditions.MarkFalse(s.scope.ManagedMachinePool, expinfrav1.EKSNodeGroupUpdatingCondition, "updated", clusterv1.ConditionSeverityInfo, "")
+		}
+	}
 	if err := s.reconcileNodegroupVersion(ng); err != nil {
 		return errors.Wrap(err, "failed to reconcile nodegroup version")
 	}

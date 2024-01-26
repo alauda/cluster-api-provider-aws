@@ -102,3 +102,10 @@ const (
 	// reconciling EKS nodegroup iam roles.
 	IAMFargateRolesReconciliationFailedReason = "IAMFargateRolesReconciliationFailed"
 )
+
+const (
+	// EKSNodeGroupUpdatingCondition condition reports on whether the eks node group is updating.
+	EKSNodeGroupUpdatingCondition clusterv1.ConditionType = "EKSNodeGroupUpdating"
+	// EKSNodeGroupReconciliationFailedReason used to report failures while reconciling EKS node group.
+	EKSNodeGroupReconciliationFailedReason = "EKSNodeGroupReconciliationFailed"
+)

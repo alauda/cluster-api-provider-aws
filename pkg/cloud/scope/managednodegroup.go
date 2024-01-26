@@ -397,3 +397,8 @@ func (s *ManagedMachinePoolScope) LaunchTemplateName() string {
 func (s *ManagedMachinePoolScope) GetRuntimeObject() runtime.Object {
 	return s.ManagedMachinePool
 }
+
+func (s *ManagedMachinePoolScope) ClusterUpgrading() bool {
+	_, ok := s.Cluster.Annotations[annotationClusterUpgradeInfo]
+	return ok
+}

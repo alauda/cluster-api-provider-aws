@@ -52,9 +52,16 @@ func (s *Service) ReconcileControlPlane(ctx context.Context) error {
 	// EKS Addons
 	if err := s.reconcileAddons(ctx); err != nil {
 		conditions.MarkFalse(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsConfiguredCondition, ekscontrolplanev1.EKSAddonsConfiguredFailedReason, clusterv1.ConditionSeverityError, err.Error())
+		conditions.Set(s.scope.ControlPlane, conditions.FalseCondition(ekscontrolplanev1.EKSAddonsUpdatingCondition, ekscontrolplanev1.EKSAddonsUpdatingFailedReason, clusterv1.ConditionSeverityError, err.Error()))
 		return errors.Wrap(err, "failed reconciling eks addons")
 	}
 	conditions.MarkTrue(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsConfiguredCondition)
+	if conditions.IsTrue(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsUpdatingCondition) {
+		conditions.MarkFalse(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsUpdatingCondition, "updated", clusterv1.ConditionSeverityInfo, "")
+	}
+	if !s.scope.ClusterUpgrading() {
+		conditions.Delete(s.scope.ControlPlane, ekscontrolplanev1.EKSAddonsUpdatingCondition)
+	}
 
 	// EKS Identity Provider
 	if err := s.reconcileIdentityProvider(ctx); err != nil {

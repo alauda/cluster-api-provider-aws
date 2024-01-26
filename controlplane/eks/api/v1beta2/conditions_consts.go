@@ -65,3 +65,10 @@ const (
 	// EKSDeleteUnmanagedNodePoolsFailedReason used to report failures while deleting unmanaged node pools.
 	EKSDeleteUnmanagedNodePoolsFailedReason = "EKSDeleteUnmanagedNodePoolsFailed"
 )
+
+const (
+	// EKSAddonsUpdatingCondition condition reports on whether the eks addons is updating.
+	EKSAddonsUpdatingCondition clusterv1.ConditionType = "EKSAddonsUpdating"
+	// EKSAddonsUpdatingFailedReason used to report failures while updating EKS addons.
+	EKSAddonsUpdatingFailedReason = "EKSAddonsUpdatingFailed"
+)
