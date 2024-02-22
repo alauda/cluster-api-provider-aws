@@ -48,13 +48,12 @@ func (s *Service) reconcileCluster(ctx context.Context) error {
 	s.scope.Debug("Reconciling EKS cluster")
 
 	eksClusterName := s.scope.KubernetesClusterName()
-
 	cluster, err := s.describeEKSCluster(eksClusterName)
 	if err != nil {
 		return errors.Wrap(err, "failed to describe eks clusters")
 	}
 
-	if cluster == nil {
+	if cluster == nil && s.scope.ControlPlane.Spec.ControlPlaneEndpoint.Host == "" {
 		cluster, err = s.createCluster(eksClusterName)
 		if err != nil {
 			return errors.Wrap(err, "failed to create cluster")
