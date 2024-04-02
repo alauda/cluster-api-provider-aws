@@ -5,6 +5,7 @@ go 1.19
 replace (
 	golang.org/x/crypto => golang.org/x/crypto v0.17.0
 	golang.org/x/net => golang.org/x/net v0.17.0
+	google.golang.org/protobuf => google.golang.org/protobuf v1.33.0
 	sigs.k8s.io/cluster-api => sigs.k8s.io/cluster-api v1.4.4
 )
 
