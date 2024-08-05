@@ -1,6 +1,6 @@
 module sigs.k8s.io/cluster-api-provider-aws/v2
 
-go 1.22.3
+go 1.22
 
 replace (
 	golang.org/x/crypto => golang.org/x/crypto v0.17.0
